@@ -68,7 +68,9 @@ public class Chat extends Activity {
 								 .equals(action)) {
 				getGattService(mBluetoothLeService.getSupportedGattService());
 			} else if (RBLService.ACTION_DATA_AVAILABLE.equals(action)) {
-				displayData(intent.getByteArrayExtra(RBLService.EXTRA_DATA));
+				for (byte b : RBLService.EXTRAS_DATA) {
+					handleBtByte(b);
+				}
 			}
 		}
 	};
@@ -82,7 +84,7 @@ public class Chat extends Activity {
 			tx[i + 1] = bytes[i];
 		}
 
-		BluetoothGattCharacteristic
+	BluetoothGattCharacteristic
 			chara = map.get(RBLService.UUID_BLE_SHIELD_TX);
 		chara.setValue(tx);
 		mBluetoothLeService.writeCharacteristic(chara);
@@ -158,26 +160,19 @@ public class Chat extends Activity {
 		System.exit(0);
 	}
 
-	private void displayData(byte[] byteArray) {
-		for (byte b : byteArray) {
-			handleBtByte(b);
-		}
-
-		if (byteArray != null) {
-			String data = new String(byteArray);
-			tv.append(data);
-			// find the amount we need to scroll. This works by
-			// asking the TextView's internal layout for the position
-			// of the final line and then subtracting the TextView's height
-			final int scrollAmount = tv.getLayout().getLineTop(
+	private void displayData(String data) {
+		tv.append(data);
+		// find the amount we need to scroll. This works by
+		// asking the TextView's internal layout for the position
+		// of the final line and then subtracting the TextView's height
+		final int scrollAmount = tv.getLayout().getLineTop(
 					tv.getLineCount())
 					- tv.getHeight();
-			// if there is no need to scroll, scrollAmount will be <=0
-			if (scrollAmount > 0)
-				tv.scrollTo(0, scrollAmount);
-			else
-				tv.scrollTo(0, 0);
-		}
+		// if there is no need to scroll, scrollAmount will be <=0
+		if (scrollAmount > 0)
+			tv.scrollTo(0, scrollAmount);
+		else
+			tv.scrollTo(0, 0);
 	}
 
 	private void handleBtByte(byte b) {
@@ -189,17 +184,17 @@ public class Chat extends Activity {
 			case 'o':
 			case 'O':
 				sendString(String.valueOf(c));
-				tv.append("Got boolean: " + String.valueOf(c));
+				displayData("Got boolean: " + String.valueOf(c) + "\n");
 				break;
 			case 'P':
 				sendString("tPrev Track\n");
 				sendString("aPrev Artist\n");
-				tv.append("Prev track");
+				displayData("Prev track\n");
 				break;
 			case 'n':
 				sendString("tNext Track\n");
 				sendString("aNext Artist\n");
-				tv.append("Next track");
+				displayData("Next track\n");
 				break;
 		};
 	}
