@@ -35,6 +35,9 @@ public class Chat extends Activity {
 	private String mDeviceAddress;
 	private RBLService mBluetoothLeService;
 	private Map<UUID, BluetoothGattCharacteristic> map = new HashMap<UUID, BluetoothGattCharacteristic>();
+	private boolean mPlaying = false;
+	private boolean mOnline = true;
+	private byte mVolume = 127;
 
 	private final ServiceConnection mServiceConnection = new ServiceConnection() {
 
@@ -68,7 +71,7 @@ public class Chat extends Activity {
 								 .equals(action)) {
 				getGattService(mBluetoothLeService.getSupportedGattService());
 			} else if (RBLService.ACTION_DATA_AVAILABLE.equals(action)) {
-				for (byte b : RBLService.EXTRAS_DATA) {
+				for (byte b : intent.getByteArrayExtra(RBLService.EXTRA_DATA)) {
 					handleBtByte(b);
 				}
 			}
@@ -179,19 +182,32 @@ public class Chat extends Activity {
 		char c = (char) b;
 
 		switch (c) {
-			case 'x': 
-			case 'X':
-			case 'o':
-			case 'O':
-				sendString(String.valueOf(c));
-				displayData("Got boolean: " + String.valueOf(c) + "\n");
+		  case 'o':
+				mOnline = !mOnline;
+				if (mOnline) {
+					sendString("O");
+					displayData("Online\n");
+				} else {
+					sendString("o");
+					displayData("Offline\n");
+				}
+				break;
+			case 'x':
+				mPlaying = !mPlaying;
+				if (mPlaying) {
+					sendString("X");
+					displayData("Playing\n");
+				} else {
+					sendString("x");
+					displayData("Paused\n");
+				}
 				break;
 			case 'P':
 				sendString("tPrev Track\n");
 				sendString("aPrev Artist\n");
 				displayData("Prev track\n");
 				break;
-			case 'n':
+			case 'N':
 				sendString("tNext Track\n");
 				sendString("aNext Artist\n");
 				displayData("Next track\n");
