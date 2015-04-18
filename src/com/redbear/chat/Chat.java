@@ -65,13 +65,32 @@ public class Chat extends Activity {
 
 			if (RBLService.ACTION_GATT_DISCONNECTED.equals(action)) {
 			} else if (RBLService.ACTION_GATT_SERVICES_DISCOVERED
-					.equals(action)) {
+								 .equals(action)) {
 				getGattService(mBluetoothLeService.getSupportedGattService());
 			} else if (RBLService.ACTION_DATA_AVAILABLE.equals(action)) {
 				displayData(intent.getByteArrayExtra(RBLService.EXTRA_DATA));
 			}
 		}
 	};
+
+	private void sendBytes(byte[] bytes) {
+		/* Byte buffer must be prepended with a null byte for some reason */
+		byte[] tx = new byte[bytes.length + 1];
+		tx[0] = 0x00;
+
+		for (int i = 0; i < bytes.length; i++) {
+			tx[i + 1] = bytes[i];
+		}
+
+		BluetoothGattCharacteristic
+			chara = map.get(RBLService.UUID_BLE_SHIELD_TX);
+		chara.setValue(tx);
+		mBluetoothLeService.writeCharacteristic(chara);
+	}
+
+	private void sendString(String str) {
+		sendBytes(str.getBytes());
+	}
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -86,21 +105,7 @@ public class Chat extends Activity {
 
 			@Override
 			public void onClick(View v) {
-				BluetoothGattCharacteristic characteristic = map
-						.get(RBLService.UUID_BLE_SHIELD_TX);
-
-				String str = et.getText().toString();
-				byte b = 0x00;
-				byte[] tmp = str.getBytes();
-				byte[] tx = new byte[tmp.length + 1];
-				tx[0] = b;
-				for (int i = 1; i < tmp.length + 1; i++) {
-					tx[i] = tmp[i - 1];
-				}
-
-				characteristic.setValue(tx);
-				mBluetoothLeService.writeCharacteristic(characteristic);
-
+				sendString(et.getText().toString());
 				et.setText("");
 			}
 		});
@@ -154,6 +159,10 @@ public class Chat extends Activity {
 	}
 
 	private void displayData(byte[] byteArray) {
+		for (byte b : byteArray) {
+			handleBtByte(b);
+		}
+
 		if (byteArray != null) {
 			String data = new String(byteArray);
 			tv.append(data);
@@ -169,6 +178,30 @@ public class Chat extends Activity {
 			else
 				tv.scrollTo(0, 0);
 		}
+	}
+
+	private void handleBtByte(byte b) {
+		char c = (char) b;
+
+		switch (c) {
+			case 'x': 
+			case 'X':
+			case 'o':
+			case 'O':
+				sendString(String.valueOf(c));
+				tv.append("Got boolean: " + String.valueOf(c));
+				break;
+			case 'P':
+				sendString("tPrev Track\n");
+				sendString("aPrev Artist\n");
+				tv.append("Prev track");
+				break;
+			case 'n':
+				sendString("tNext Track\n");
+				sendString("aNext Artist\n");
+				tv.append("Next track");
+				break;
+		};
 	}
 
 	private void getGattService(BluetoothGattService gattService) {
