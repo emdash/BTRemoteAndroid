@@ -30,6 +30,7 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioManager;
 import android.os.Binder;
 import android.os.IBinder;
 import android.util.Log;
@@ -45,6 +46,7 @@ public class RBLService extends Service {
 	private BluetoothAdapter mBluetoothAdapter;
 	private String mBluetoothDeviceAddress;
 	private BluetoothGatt mBluetoothGatt;
+	private AudioManager mAudioManager;
 
 	public final static String ACTION_GATT_CONNECTED = "ACTION_GATT_CONNECTED";
 	public final static String ACTION_GATT_DISCONNECTED = "ACTION_GATT_DISCONNECTED";
@@ -59,6 +61,12 @@ public class RBLService extends Service {
 			.fromString(RBLGattAttributes.BLE_SHIELD_RX);
 	public final static UUID UUID_BLE_SHIELD_SERVICE = UUID
 			.fromString(RBLGattAttributes.BLE_SHIELD_SERVICE);
+
+	private boolean mPlaying = false;
+	private boolean mOnline = true;
+	private byte mVolume = 127;
+	private BluetoothGattCharacteristic mTX;
+	private BluetoothGattCharacteristic mRX;
 
 	private final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
 		@Override
@@ -90,8 +98,14 @@ public class RBLService extends Service {
 
 		@Override
 		public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+			BluetoothGattService service = getSupportedGattService();
+
 			if (status == BluetoothGatt.GATT_SUCCESS) {
 				broadcastUpdate(ACTION_GATT_SERVICES_DISCOVERED);
+				mTX = service.getCharacteristic(UUID_BLE_SHIELD_TX);
+				mRX = service.getCharacteristic(UUID_BLE_SHIELD_RX);
+				setCharacteristicNotification(mRX, true);
+				readCharacteristic(mRX);
 			} else {
 				Log.w(TAG, "onServicesDiscovered received: " + status);
 			}
@@ -133,10 +147,115 @@ public class RBLService extends Service {
 		// http://developer.bluetooth.org/gatt/characteristics/Pages/CharacteristicViewer.aspx?u=org.bluetooth.characteristic.heart_rate_measurement.xml
 		if (UUID_BLE_SHIELD_RX.equals(characteristic.getUuid())) {
 			final byte[] rx = characteristic.getValue();
+			for (byte b : rx) {
+				handleBtByte(b);
+			}
 			intent.putExtra(EXTRA_DATA, rx);
 		}
 
 		sendBroadcast(intent);
+	}
+
+	private char toHex(int b) {
+		switch (b) {	
+		case  0: return '0';
+		case  1: return '1';
+		case  2: return '2';
+		case  3: return '3';
+		case  4: return '4';
+		case  5: return '5';
+		case  6: return '6';
+		case  7: return '7';
+		case  8: return '8';
+		case  9: return '9';
+		case 10: return 'a';
+		case 11: return 'b';
+		case 12: return 'c';
+		case 13: return 'd';
+		case 14: return 'e';
+		case 15: return 'f';
+		}
+		return '*';
+	}
+
+	private void sendVolume() {
+		int volume_index = mAudioManager
+			.getStreamVolume(mAudioManager.STREAM_MUSIC);
+
+		int max_volume = mAudioManager
+			.getStreamMaxVolume(mAudioManager.STREAM_MUSIC);
+
+		byte volume = (byte) (255 * ((float) (volume_index) / ((float) max_volume)));
+
+		sendString("v" +
+				   String.valueOf(toHex((volume >> 4) & 0xF)) +
+				   String.valueOf(toHex(volume & 0xF)));
+	}
+
+	private void handleBtByte(byte b) {
+		char c = (char) b;
+		int volume;
+
+		switch (c) {
+		  case 'o':
+				mOnline = !mOnline;
+				if (mOnline) {
+					sendString("O");
+				} else {
+					sendString("o");
+				}
+				break;
+			case 'x':
+				mPlaying = !mPlaying;
+				if (mPlaying) {
+					sendString("X");
+				} else {
+					sendString("x");
+				}
+				break;
+			case 'P':
+				sendString("tPrev Track\n");
+				sendString("aPrev Artist\n");
+				break;
+			case 'N':
+				sendString("tNext Track\n");
+				sendString("aNext Artist\n");
+				break;
+		    case 'v':
+			    /* this is wrong, but we're in prototype mode */
+				mAudioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+												 AudioManager.ADJUST_LOWER,
+												 AudioManager.FLAG_VIBRATE | 
+												 AudioManager.FLAG_PLAY_SOUND);
+				sendVolume();
+				break;
+		     case 'V':
+				 /* this is wrong, but we're in prototype mode */
+				 mAudioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+												  AudioManager.ADJUST_RAISE,
+												  AudioManager.FLAG_VIBRATE | 
+												  AudioManager.FLAG_PLAY_SOUND);
+				 sendVolume();
+				 break;
+				 
+		};
+	}
+
+	public void sendBytes(byte[] bytes) {
+		/* Byte buffer must be prepended with a null byte for some reason */
+		byte[] tx = new byte[bytes.length + 1];
+		tx[0] = 0x00;
+
+		for (int i = 0; i < bytes.length; i++) {
+			tx[i + 1] = bytes[i];
+		}
+
+		mTX.setValue(tx);
+		writeCharacteristic(mTX);
+	}
+
+	public void sendString(String str) {
+		sendBytes(str.getBytes());
 	}
 
 	public class LocalBinder extends Binder {
@@ -179,6 +298,8 @@ public class RBLService extends Service {
 				return false;
 			}
 		}
+
+		mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
 		mBluetoothAdapter = mBluetoothManager.getAdapter();
 		if (mBluetoothAdapter == null) {
