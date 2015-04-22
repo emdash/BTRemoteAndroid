@@ -17,6 +17,8 @@
 package com.redbear.chat;
 
 import java.util.UUID;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
@@ -65,8 +67,21 @@ public class RBLService extends Service {
 	private boolean mPlaying = false;
 	private boolean mOnline = true;
 	private byte mVolume = 127;
+	private String mArtist = "Artist";
+	private String mTrack = "Track";
+	private String mSource = "Source";
 	private BluetoothGattCharacteristic mTX;
 	private BluetoothGattCharacteristic mRX;
+
+
+	private TimerTask mPostConnectTask = 
+		new TimerTask() {
+			public void run () {
+				sendState();
+			}
+		};
+
+	private Timer mTimer = new Timer();
 
 	private final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
 		@Override
@@ -78,9 +93,8 @@ public class RBLService extends Service {
 				intentAction = ACTION_GATT_CONNECTED;
 				broadcastUpdate(intentAction);
 				Log.i(TAG, "Connected to GATT server.");
-				// Attempts to discover services after successful connection.
 				Log.i(TAG, "Attempting to start service discovery:"
-						+ mBluetoothGatt.discoverServices());
+					  + mBluetoothGatt.discoverServices());
 			} else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
 				intentAction = ACTION_GATT_DISCONNECTED;
 				Log.i(TAG, "Disconnected from GATT server.");
@@ -105,7 +119,7 @@ public class RBLService extends Service {
 				mTX = service.getCharacteristic(UUID_BLE_SHIELD_TX);
 				mRX = service.getCharacteristic(UUID_BLE_SHIELD_RX);
 				setCharacteristicNotification(mRX, true);
-				readCharacteristic(mRX);
+				mTimer.schedule(mPostConnectTask, 1000);
 			} else {
 				Log.w(TAG, "onServicesDiscovered received: " + status);
 			}
@@ -192,6 +206,30 @@ public class RBLService extends Service {
 				   String.valueOf(toHex(volume & 0xF)));
 	}
 
+	private void sendPlaying() {
+		sendString(mPlaying ? "X" : "x");
+	}
+
+	private void sendNetwork() {
+		sendString(mOnline ? "O" : "o");
+	}
+
+	private void sendArtist() {
+		sendString("a" + mArtist + "\n");
+	}
+
+	private void sendTrack() {
+		sendString("t" + mTrack + "\n");
+	}
+
+	private void sendState() {
+	    Log.i(TAG, "Send state");
+		sendVolume();
+		sendPlaying();
+		sendArtist();
+		sendTrack();
+	}
+
 	private void handleBtByte(byte b) {
 		char c = (char) b;
 		int volume;
@@ -199,27 +237,19 @@ public class RBLService extends Service {
 		switch (c) {
 		  case 'o':
 				mOnline = !mOnline;
-				if (mOnline) {
-					sendString("O");
-				} else {
-					sendString("o");
-				}
+				sendNetwork();
 				break;
 			case 'x':
 				mPlaying = !mPlaying;
-				if (mPlaying) {
-					sendString("X");
-				} else {
-					sendString("x");
-				}
+				sendPlaying();
 				break;
 			case 'P':
-				sendString("tPrev Track\n");
-				sendString("aPrev Artist\n");
+				mTrack = "Prev";
+				sendTrack();
 				break;
 			case 'N':
-				sendString("tNext Track\n");
-				sendString("aNext Artist\n");
+				mTrack = "Next";
+				sendTrack();
 				break;
 		    case 'v':
 			    /* this is wrong, but we're in prototype mode */
