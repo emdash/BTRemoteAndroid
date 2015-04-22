@@ -64,12 +64,11 @@ public class Chat extends Activity {
 
 			displayData("Got intent: " + action + "\n");
 
-			if (RBLService.ACTION_GATT_SERVICES_DISCOVERED.equals(action)) {
-				displayData("Services discovered\n");
+			if (action.equals(RBLService.ACTION_GATT_DISCONNECTED)) {
+				finish();
 			} else if (RBLService.ACTION_DATA_AVAILABLE.equals(action)) {
-			  displayData("Extra Data: " +
-						  new String(intent.getByteArrayExtra(RBLService.EXTRA_DATA)) +
-						  "\n");
+				String data = new String(intent.getByteArrayExtra(RBLService.EXTRA_DATA));
+				displayData("Extra Data: " + data);
 			}
 			displayData("\n");
 		}
