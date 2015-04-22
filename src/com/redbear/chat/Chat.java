@@ -64,9 +64,9 @@ public class Chat extends Activity {
 
 			displayData("Got intent: " + action + "\n");
 
-			if (action.equals(RBLService.ACTION_GATT_DISCONNECTED)) {
+			if (action.equals(RBLService.ACTION_DISCONNECTED)) {
 				finish();
-			} else if (RBLService.ACTION_DATA_AVAILABLE.equals(action)) {
+			} else if (RBLService.ACTION_RX.equals(action)) {
 				String data = new String(intent.getByteArrayExtra(RBLService.EXTRA_DATA));
 				displayData("Extra Data: " + data);
 			}
@@ -154,10 +154,9 @@ public class Chat extends Activity {
 	private static IntentFilter makeGattUpdateIntentFilter() {
 		final IntentFilter intentFilter = new IntentFilter();
 
-		intentFilter.addAction(RBLService.ACTION_GATT_CONNECTED);
-		intentFilter.addAction(RBLService.ACTION_GATT_DISCONNECTED);
-		intentFilter.addAction(RBLService.ACTION_GATT_SERVICES_DISCOVERED);
-		intentFilter.addAction(RBLService.ACTION_DATA_AVAILABLE);
+		intentFilter.addAction(RBLService.ACTION_CONNECTED);
+		intentFilter.addAction(RBLService.ACTION_DISCONNECTED);
+		intentFilter.addAction(RBLService.ACTION_RX);
 
 		return intentFilter;
 	}

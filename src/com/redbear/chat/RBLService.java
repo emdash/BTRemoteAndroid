@@ -42,19 +42,10 @@ import android.util.Log;
  * hosted on a given Bluetooth LE device.
  */
 public class RBLService extends Service {
-	private final static String TAG = RBLService.class.getSimpleName();
-
-	private BluetoothManager mBluetoothManager;
-	private BluetoothAdapter mBluetoothAdapter;
-	private String mBluetoothDeviceAddress;
-	private BluetoothGatt mBluetoothGatt;
-	private AudioManager mAudioManager;
-
-	public final static String ACTION_GATT_CONNECTED = "ACTION_GATT_CONNECTED";
-	public final static String ACTION_GATT_DISCONNECTED = "ACTION_GATT_DISCONNECTED";
-	public final static String ACTION_GATT_SERVICES_DISCOVERED = "ACTION_GATT_SERVICES_DISCOVERED";
-	public final static String ACTION_GATT_RSSI = "ACTION_GATT_RSSI";
-	public final static String ACTION_DATA_AVAILABLE = "ACTION_DATA_AVAILABLE";
+	public final static String ACTION_CONNECTED = "ACTION_CONNECTED";
+	public final static String ACTION_DISCONNECTED = "ACTION_DISCONNECTED";
+	public final static String ACTION_RSSI = "ACTION_RSSI";
+	public final static String ACTION_RX = "ACTION_RX";
 	public final static String EXTRA_DATA = "EXTRA_DATA";
 
 	public final static UUID UUID_BLE_SHIELD_TX = UUID
@@ -64,39 +55,47 @@ public class RBLService extends Service {
 	public final static UUID UUID_BLE_SHIELD_SERVICE = UUID
 			.fromString(RBLGattAttributes.BLE_SHIELD_SERVICE);
 
-	private boolean mPlaying = false;
-	private boolean mOnline = true;
-	private byte mVolume = 127;
-	private String mArtist = "Artist";
-	private String mTrack = "Track";
-	private String mSource = "Source";
-	private BluetoothGattCharacteristic mTX;
-	private BluetoothGattCharacteristic mRX;
+	final static String TAG = RBLService.class.getSimpleName();
 
+	BluetoothManager mBluetoothManager;
+	BluetoothAdapter mBluetoothAdapter;
+	BluetoothGatt mBluetoothGatt;
+	BluetoothGattCharacteristic mTX;
+	BluetoothGattCharacteristic mRX;
+	String mBluetoothDeviceAddress;
 
-	private TimerTask mPostConnectTask = 
+	AudioManager mAudioManager;
+
+	boolean mPlaying = false;
+	boolean mOnline = true;
+	byte mVolume = 127;
+	String mArtist = "Artist";
+	String mTrack = "Track";
+	String mSource = "Source";
+
+	TimerTask mPostConnectTask = 
 		new TimerTask() {
 			public void run () {
 				sendState();
 			}
 		};
 
-	private Timer mTimer = new Timer();
+	Timer mTimer = new Timer();
 
-	private final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
+	final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
 		@Override
 		public void onConnectionStateChange(BluetoothGatt gatt, int status,
 				int newState) {
 			String intentAction;
 
 			if (newState == BluetoothProfile.STATE_CONNECTED) {
-				intentAction = ACTION_GATT_CONNECTED;
-				broadcastUpdate(intentAction);
 				Log.i(TAG, "Connected to GATT server.");
-				Log.i(TAG, "Attempting to start service discovery:"
-					  + mBluetoothGatt.discoverServices());
+				Log.i(TAG, "Discovering services.");
+				if (!mBluetoothGatt.discoverServices()) {
+					Log.e(TAG, "Service discovery failed to start.");
+				}
 			} else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-				intentAction = ACTION_GATT_DISCONNECTED;
+				intentAction = ACTION_DISCONNECTED;
 				Log.i(TAG, "Disconnected from GATT server.");
 				broadcastUpdate(intentAction);
 			}
@@ -104,7 +103,7 @@ public class RBLService extends Service {
 
 		public void onReadRemoteRssi(BluetoothGatt gatt, int rssi, int status) {
 			if (status == BluetoothGatt.GATT_SUCCESS) {
-				broadcastUpdate(ACTION_GATT_RSSI, rssi);
+				broadcastUpdate(ACTION_RSSI, rssi);
 			} else {
 				Log.w(TAG, "onReadRemoteRssi received: " + status);
 			}
@@ -115,7 +114,7 @@ public class RBLService extends Service {
 			BluetoothGattService service = getSupportedGattService();
 
 			if (status == BluetoothGatt.GATT_SUCCESS) {
-				broadcastUpdate(ACTION_GATT_SERVICES_DISCOVERED);
+				broadcastUpdate(ACTION_CONNECTED);
 				mTX = service.getCharacteristic(UUID_BLE_SHIELD_TX);
 				mRX = service.getCharacteristic(UUID_BLE_SHIELD_RX);
 				setCharacteristicNotification(mRX, true);
@@ -129,14 +128,14 @@ public class RBLService extends Service {
 		public void onCharacteristicRead(BluetoothGatt gatt,
 				BluetoothGattCharacteristic characteristic, int status) {
 			if (status == BluetoothGatt.GATT_SUCCESS) {
-				broadcastUpdate(ACTION_DATA_AVAILABLE, characteristic);
+				broadcastUpdate(ACTION_RX, characteristic);
 			}
 		}
 
 		@Override
 		public void onCharacteristicChanged(BluetoothGatt gatt,
 				BluetoothGattCharacteristic characteristic) {
-			broadcastUpdate(ACTION_DATA_AVAILABLE, characteristic);
+			broadcastUpdate(ACTION_RX, characteristic);
 		}
 	};
 
