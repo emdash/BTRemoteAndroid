@@ -159,8 +159,8 @@ public class RBLService extends Service {
 			Log.i(TAG, "String contains \u2014: " + tickerText.contains("\u2014"));
 			Log.i(TAG, "TickerText: " + tickerText + "(" + split.length + ")");
 			if (split.length == 2) {
-				mTrack = split[0].substring(0, Math.min(split[0].length(), 25));
-				mArtist = split[1].substring(0, Math.min(split[1].length(), 25));
+				mTrack = split[0].substring(0, Math.min(split[0].length(), 24));
+				mArtist = split[1].substring(0, Math.min(split[1].length(), 24));
 					
 				Log.i(TAG, "Track: " + mTrack);
 				Log.i(TAG, "Artist: "  + mArtist);
