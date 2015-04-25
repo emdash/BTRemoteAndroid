@@ -1,3 +1,4 @@
+
 package com.redbear.chat;
 
 import java.util.HashMap;
@@ -61,16 +62,15 @@ public class Chat extends Activity {
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			final String action = intent.getAction();
-
 			displayData("Got intent: " + action + "\n");
 
 			if (action.equals(RBLService.ACTION_DISCONNECTED)) {
 				finish();
-			} else if (RBLService.ACTION_RX.equals(action)) {
-				String data = new String(intent.getByteArrayExtra(RBLService.EXTRA_DATA));
+			} else if (action.equals(RBLService.ACTION_RX)) {
+				String data = new 
+					String(intent.getByteArrayExtra(RBLService.EXTRA_DATA));
 				displayData("Extra Data: " + data);
 			}
-			displayData("\n");
 		}
 	};
 
@@ -102,6 +102,9 @@ public class Chat extends Activity {
 
 		Intent gattServiceIntent = new Intent(this, RBLService.class);
 		bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
+
+		intent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
+		startActivity(intent);
 	}
 
 	@Override
@@ -157,6 +160,8 @@ public class Chat extends Activity {
 		intentFilter.addAction(RBLService.ACTION_CONNECTED);
 		intentFilter.addAction(RBLService.ACTION_DISCONNECTED);
 		intentFilter.addAction(RBLService.ACTION_RX);
+		intentFilter.addAction(NLService.ACTION_SONG_CHANGED);
+		intentFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
 
 		return intentFilter;
 	}

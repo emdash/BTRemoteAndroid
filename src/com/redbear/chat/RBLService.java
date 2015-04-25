@@ -30,8 +30,10 @@ import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.media.AudioManager;
 import android.os.Binder;
 import android.os.IBinder;
@@ -84,10 +86,11 @@ public class RBLService extends Service {
 
 	final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
 		@Override
-		public void onConnectionStateChange(BluetoothGatt gatt, int status,
-				int newState) {
+		public void onConnectionStateChange(BluetoothGatt gatt,
+											int status,
+											int newState) {
 			String intentAction;
-
+			
 			if (newState == BluetoothProfile.STATE_CONNECTED) {
 				Log.i(TAG, "Connected to GATT server.");
 				Log.i(TAG, "Discovering services.");
@@ -119,6 +122,8 @@ public class RBLService extends Service {
 				mRX = service.getCharacteristic(UUID_BLE_SHIELD_RX);
 				setCharacteristicNotification(mRX, true);
 				mTimer.schedule(mPostConnectTask, 1000);
+				Log.i(TAG, "Registering broadcast receiver");
+				registerReceiver(mReceiver, nlIntentFilter());
 			} else {
 				Log.w(TAG, "onServicesDiscovered received: " + status);
 			}
@@ -138,6 +143,44 @@ public class RBLService extends Service {
 			broadcastUpdate(ACTION_RX, characteristic);
 		}
 	};
+    
+    BroadcastReceiver mReceiver = new BroadcastReceiver() {		   
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			String action = intent.getAction();
+			Log.i(TAG, "Got intent: " + action);
+			String tickerText = intent.getStringExtra("tickerText");
+			// Spotify uses an emdash (U+2014) in order to split
+			// between artist and track. This is pretty robust, as
+			// most song titles contain dashes instead. If they change
+			// their format, this will break.
+			String [] split = tickerText.split(" \\u2014 ", 2);
+			int i;
+			Log.i(TAG, "String contains \u2014: " + tickerText.contains("\u2014"));
+			Log.i(TAG, "TickerText: " + tickerText + "(" + split.length + ")");
+			if (split.length == 2) {
+				mTrack = split[0].substring(0, Math.min(split[0].length(), 25));
+				mArtist = split[1].substring(0, Math.min(split[1].length(), 25));
+					
+				Log.i(TAG, "Track: " + mTrack);
+				Log.i(TAG, "Artist: "  + mArtist);
+				sendArtist();
+				sendTrack();
+			} else {
+				for (String s : split) {
+					Log.i(TAG, "Field: " + ((s == null) ? "null" : s));
+				}
+			}
+		}
+	};
+
+	private static IntentFilter nlIntentFilter() {
+		final IntentFilter intentFilter = new IntentFilter();
+		intentFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
+		intentFilter.addAction(NLService.ACTION_SONG_CHANGED);
+		return intentFilter;
+	}
+
 
 	private void broadcastUpdate(final String action) {
 		final Intent intent = new Intent(action);
@@ -300,11 +343,6 @@ public class RBLService extends Service {
 
 	@Override
 	public boolean onUnbind(Intent intent) {
-		// After using a given device, you should make sure that
-		// BluetoothGatt.close() is called
-		// such that resources are cleaned up properly. In this particular
-		// example, close() is
-		// invoked when the UI is disconnected from the Service.
 		close();
 		return super.onUnbind(intent);
 	}
@@ -320,6 +358,8 @@ public class RBLService extends Service {
 		// For API level 18 and above, get a reference to BluetoothAdapter
 		// through
 		// BluetoothManager.
+		Log.i(TAG, "Initializing");
+
 		if (mBluetoothManager == null) {
 			mBluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
 			if (mBluetoothManager == null) {
