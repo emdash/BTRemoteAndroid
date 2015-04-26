@@ -83,12 +83,11 @@ public class RBLService extends Service {
 	String mTrack = "Track";
 	String mSource = "Source";
 
-	TimerTask mPostConnectTask = 
-		new TimerTask() {
-			public void run () {
-				sendState();
-			}
-		};
+	TimerTask mPostConnectTask = new TimerTask() {
+		public void run () {
+			sendState();
+		}
+	};
 
 	Timer mTimer = new Timer();
 
@@ -109,6 +108,11 @@ public class RBLService extends Service {
 				intentAction = ACTION_DISCONNECTED;
 				Log.i(TAG, "Disconnected from GATT server.");
 				broadcastUpdate(intentAction);
+				Log.i(TAG, "Updating intent filter.");
+				unregisterReceiver(mReceiver);
+				registerReceiver(mReceiver, mDisconnectedFilter);
+				mTX = null;
+				mRX = null;
 			}
 		}
 
@@ -146,6 +150,7 @@ public class RBLService extends Service {
 		@Override
 		public void onCharacteristicRead(BluetoothGatt gatt,
 				BluetoothGattCharacteristic characteristic, int status) {
+
 			if (status == BluetoothGatt.GATT_SUCCESS) {
 				broadcastUpdate(ACTION_RX, characteristic);
 			}
@@ -332,16 +337,19 @@ public class RBLService extends Service {
 	}
 
 	void sendBytes(byte[] bytes) {
-		/* Byte buffer must be prepended with a null byte for some reason */
-		byte[] tx = new byte[bytes.length + 1];
-		tx[0] = 0x00;
+		/* Byte buffer must be prepended with a null byte for some
+		 * reason */
+		if (mTX != null) {
+			byte[] tx = new byte[bytes.length + 1];
+			tx[0] = 0x00;
 
-		for (int i = 0; i < bytes.length; i++) {
-			tx[i + 1] = bytes[i];
+			for (int i = 0; i < bytes.length; i++) {
+				tx[i + 1] = bytes[i];
+			}
+
+			mTX.setValue(tx);
+			writeCharacteristic(mTX);
 		}
-
-		mTX.setValue(tx);
-		writeCharacteristic(mTX);
 	}
 
 	void sendString(String str) {
@@ -387,11 +395,14 @@ public class RBLService extends Service {
 		// This is the only action we can safely handle when we're
 		// disconnected.
 		mDisconnectedFilter.addAction(RBLService.ACTION_CONNECT);
+		mDisconnectedFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
+		mDisconnectedFilter.addAction(NLService.ACTION_SONG_CHANGED);
 
 		// We start disconnected.
 		registerReceiver(mReceiver, mDisconnectedFilter);
 
 		sendBroadcast(new Intent(ACTION_READY));
+		sendBroadcast(new Intent(NLService.ACTION_GET_NOTIFICATIONS));
 	}
 
 	public void onDestroy() {
