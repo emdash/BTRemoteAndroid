@@ -26,58 +26,44 @@ import android.widget.EditText;
 import android.widget.TextView;
 
 public class Chat extends Activity {
-	private final static String TAG = Chat.class.getSimpleName();
-
+	final static String TAG = Chat.class.getSimpleName();
 	public static final String EXTRAS_DEVICE = "EXTRAS_DEVICE";
-	private TextView tv = null;
-	private EditText et = null;
-	private Button btn = null;
-	private String mDeviceName;
-	private String mDeviceAddress;
-	private RBLService mService;
 
-	private final ServiceConnection mServiceConnection = new ServiceConnection() {
+	TextView tv = null;
+	EditText et = null;
+	Button btn = null;
+	String mDeviceName;
+	String mDeviceAddress;
+	RBLService mService;
 
-		@Override
-		public void onServiceConnected(ComponentName componentName,
-				IBinder service) {
-			mService = ((RBLService.LocalBinder) service)
-					.getService();
-			if (!mService.initialize()) {
-				Log.e(TAG, "Unable to initialize Bluetooth");
-				finish();
-			}
-			// Automatically connects to the device upon successful start-up
-			// initialization.
-			mService.connect(mDeviceAddress);
-		}
-
-		@Override
-		public void onServiceDisconnected(ComponentName componentName) {
-			mService = null;
-		}
-	};
-
-	private final BroadcastReceiver mGattUpdateReceiver = new BroadcastReceiver() {
+	final BroadcastReceiver mReceiver = new BroadcastReceiver() {	
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			final String action = intent.getAction();
 			displayData("Got intent: " + action + "\n");
-
-			if (action.equals(RBLService.ACTION_DISCONNECTED)) {
+			if (action.equals(RBLService.ACTION_READY)) {
+				connect();
+			} else if (action.equals(RBLService.ACTION_DISCONNECTED)) {
 				finish();
 			} else if (action.equals(RBLService.ACTION_RX)) {
-				String data = new 
-					String(intent.getByteArrayExtra(RBLService.EXTRA_DATA));
-				displayData("Extra Data: " + data);
+				handleRx(intent);
 			}
 		}
 	};
+
+	IntentFilter mFilter = new IntentFilter();
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.second);
+
+		mFilter.addAction(RBLService.ACTION_CONNECTED);
+		mFilter.addAction(RBLService.ACTION_DISCONNECTED);
+		mFilter.addAction(RBLService.ACTION_READY);
+		mFilter.addAction(RBLService.ACTION_RX);
+		mFilter.addAction(NLService.ACTION_SONG_CHANGED);
+		mFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
 
 		tv = (TextView) findViewById(R.id.textView);
 		tv.setMovementMethod(ScrollingMovementMethod.getInstance());
@@ -87,31 +73,33 @@ public class Chat extends Activity {
 
 			@Override
 			public void onClick(View v) {
-			  mService.sendString(et.getText().toString());
+				sendString(et.getText().toString());
 				et.setText("");
 			}
 		});
 
 		Intent intent = getIntent();
-
 		mDeviceAddress = intent.getStringExtra(Device.EXTRA_DEVICE_ADDRESS);
 		mDeviceName = intent.getStringExtra(Device.EXTRA_DEVICE_NAME);
 
 		getActionBar().setTitle(mDeviceName);
 		getActionBar().setDisplayHomeAsUpEnabled(true);
 
-		Intent gattServiceIntent = new Intent(this, RBLService.class);
-		bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
-
+		startService(new Intent(this, RBLService.class));
+		/*
+		 * TODO: this is where call to start service goes.
+		 */
 		intent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
 		startActivity(intent);
+
+		
 	}
 
 	@Override
 	protected void onResume() {
 		super.onResume();
 
-		registerReceiver(mGattUpdateReceiver, makeGattUpdateIntentFilter());
+		registerReceiver(mReceiver, mFilter);
 	}
 
 	@Override
@@ -130,7 +118,7 @@ public class Chat extends Activity {
 	protected void onStop() {
 		super.onStop();
 
-		unregisterReceiver(mGattUpdateReceiver);
+		unregisterReceiver(mReceiver);
 	}
 
 	@Override
@@ -139,7 +127,25 @@ public class Chat extends Activity {
 		System.exit(0);
 	}
 
-	private void displayData(String data) {
+	void connect() {
+		Intent i = new Intent(RBLService.ACTION_CONNECT);
+		i.putExtra(RBLService.EXTRA_DEVICE_ADDRESS, mDeviceAddress);
+		sendBroadcast(i);
+	}
+
+	void sendString(String s) {
+		Intent i = new Intent(RBLService.ACTION_TX);
+		i.putExtra(RBLService.EXTRA_TX, s);
+		sendBroadcast(i);
+	};
+
+	void handleRx(Intent i) {
+		String s = new String(i.getByteArrayExtra(RBLService.EXTRA_RX));
+		displayData("Extra Data: " + s);
+	}
+
+
+	void displayData(String data) {
 		tv.append(data);
 		// find the amount we need to scroll. This works by
 		// asking the TextView's internal layout for the position
@@ -152,17 +158,5 @@ public class Chat extends Activity {
 			tv.scrollTo(0, scrollAmount);
 		else
 			tv.scrollTo(0, 0);
-	}
-
-	private static IntentFilter makeGattUpdateIntentFilter() {
-		final IntentFilter intentFilter = new IntentFilter();
-
-		intentFilter.addAction(RBLService.ACTION_CONNECTED);
-		intentFilter.addAction(RBLService.ACTION_DISCONNECTED);
-		intentFilter.addAction(RBLService.ACTION_RX);
-		intentFilter.addAction(NLService.ACTION_SONG_CHANGED);
-		intentFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
-
-		return intentFilter;
 	}
 }

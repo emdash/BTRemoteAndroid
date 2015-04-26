@@ -44,11 +44,19 @@ import android.util.Log;
  * hosted on a given Bluetooth LE device.
  */
 public class RBLService extends Service {
+	public final static String ACTION_CONNECT = "ACTION_CONNECT";
 	public final static String ACTION_CONNECTED = "ACTION_CONNECTED";
+	public final static String ACTION_DISCONNECT = "ACTION_DISCONNECT";
 	public final static String ACTION_DISCONNECTED = "ACTION_DISCONNECTED";
+	public final static String ACTION_READY = "ACTION_READY";
 	public final static String ACTION_RSSI = "ACTION_RSSI";
 	public final static String ACTION_RX = "ACTION_RX";
-	public final static String EXTRA_DATA = "EXTRA_DATA";
+	public final static String ACTION_TX = "ACTION_TX";
+	public final static String ACTION_UNSUPPORTED = "ACTION_UNSUPPORTED";
+
+	public final static String EXTRA_RX = "EXTRA_RX";
+	public final static String EXTRA_TX = "EXTRA_TX";
+	public final static String EXTRA_DEVICE_ADDRESS = "EXTRA_DEVICE_ADDRESS";
 
 	public final static UUID UUID_BLE_SHIELD_TX = UUID
 			.fromString(RBLGattAttributes.BLE_SHIELD_TX);
@@ -117,13 +125,19 @@ public class RBLService extends Service {
 			BluetoothGattService service = getSupportedGattService();
 
 			if (status == BluetoothGatt.GATT_SUCCESS) {
-				broadcastUpdate(ACTION_CONNECTED);
 				mTX = service.getCharacteristic(UUID_BLE_SHIELD_TX);
 				mRX = service.getCharacteristic(UUID_BLE_SHIELD_RX);
 				setCharacteristicNotification(mRX, true);
 				mTimer.schedule(mPostConnectTask, 1000);
-				Log.i(TAG, "Registering broadcast receiver");
-				registerReceiver(mReceiver, nlIntentFilter());
+
+				// Update the set of actions we can handle now that
+				// we're connected.
+				Log.i(TAG, "Unregistering receiver");
+				unregisterReceiver(mReceiver);
+				registerReceiver(mReceiver, mConnectedFilter);
+
+				// Announce to the system that we're connected now.
+				broadcastUpdate(ACTION_CONNECTED);
 			} else {
 				Log.w(TAG, "onServicesDiscovered received: " + status);
 			}
@@ -143,76 +157,80 @@ public class RBLService extends Service {
 			broadcastUpdate(ACTION_RX, characteristic);
 		}
 	};
+
+	void handleNotificationAction(Intent intent) {
+		String tickerText = intent.getStringExtra("tickerText");
+		// Spotify uses an emdash (U+2014) in order to split
+		// between artist and track. This is pretty robust, as
+		// most song titles contain dashes instead. If they change
+		// their format, this will break.
+		String [] split = tickerText.split(" \\u2014 ", 2);
+		int i;
+		Log.i(TAG, "String contains \u2014: " + tickerText.contains("\u2014"));
+		Log.i(TAG, "TickerText: " + tickerText + "(" + split.length + ")");
+		if (split.length == 2) {
+			mTrack = split[0].substring(0, Math.min(split[0].length(), 24));
+			mArtist = split[1].substring(0, Math.min(split[1].length(), 24));
+					
+			Log.i(TAG, "Track: " + mTrack);
+			Log.i(TAG, "Artist: "  + mArtist);
+			sendArtist();
+			sendTrack();
+		} else {
+			for (String s : split) {
+				Log.i(TAG, "Field: " + ((s == null) ? "null" : s));
+			}
+		}
+	}
     
     BroadcastReceiver mReceiver = new BroadcastReceiver() {		   
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			String action = intent.getAction();
 			Log.i(TAG, "Got intent: " + action);
-			String tickerText = intent.getStringExtra("tickerText");
-			// Spotify uses an emdash (U+2014) in order to split
-			// between artist and track. This is pretty robust, as
-			// most song titles contain dashes instead. If they change
-			// their format, this will break.
-			String [] split = tickerText.split(" \\u2014 ", 2);
-			int i;
-			Log.i(TAG, "String contains \u2014: " + tickerText.contains("\u2014"));
-			Log.i(TAG, "TickerText: " + tickerText + "(" + split.length + ")");
-			if (split.length == 2) {
-				mTrack = split[0].substring(0, Math.min(split[0].length(), 24));
-				mArtist = split[1].substring(0, Math.min(split[1].length(), 24));
-					
-				Log.i(TAG, "Track: " + mTrack);
-				Log.i(TAG, "Artist: "  + mArtist);
-				sendArtist();
-				sendTrack();
-			} else {
-				for (String s : split) {
-					Log.i(TAG, "Field: " + ((s == null) ? "null" : s));
-				}
+			if (action.equals(NLService.ACTION_NOTIFICATION_POSTED) ||
+				action.equals(NLService.ACTION_SONG_CHANGED)) {
+				handleNotificationAction(intent);
+			} else if (action.equals(ACTION_TX)) {
+				sendString(intent.getStringExtra(EXTRA_TX));
+			} else if (action.equals(ACTION_CONNECT)) {
+				connectToDevice(intent);
+			} else if (action.equals(ACTION_DISCONNECT)) {
+				connectToDevice(intent);
 			}
 		}
 	};
 
-	private static IntentFilter nlIntentFilter() {
-		final IntentFilter intentFilter = new IntentFilter();
-		intentFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
-		intentFilter.addAction(NLService.ACTION_SONG_CHANGED);
-		return intentFilter;
-	}
+	IntentFilter mDisconnectedFilter = new IntentFilter();
+	IntentFilter mConnectedFilter = new IntentFilter();
 
-
-	private void broadcastUpdate(final String action) {
+	void broadcastUpdate(final String action) {
 		final Intent intent = new Intent(action);
 		sendBroadcast(intent);
 	}
 
-	private void broadcastUpdate(final String action, int rssi) {
+	void broadcastUpdate(final String action, int rssi) {
 		final Intent intent = new Intent(action);
-		intent.putExtra(EXTRA_DATA, String.valueOf(rssi));
+		intent.putExtra(EXTRA_RX, String.valueOf(rssi));
 		sendBroadcast(intent);
 	}
 
-	private void broadcastUpdate(final String action,
-			final BluetoothGattCharacteristic characteristic) {
+	void broadcastUpdate(final String action,
+						 final BluetoothGattCharacteristic characteristic) {
 		final Intent intent = new Intent(action);
-
-		// This is special handling for the Heart Rate Measurement profile. Data
-		// parsing is
-		// carried out as per profile specifications:
-		// http://developer.bluetooth.org/gatt/characteristics/Pages/CharacteristicViewer.aspx?u=org.bluetooth.characteristic.heart_rate_measurement.xml
 		if (UUID_BLE_SHIELD_RX.equals(characteristic.getUuid())) {
 			final byte[] rx = characteristic.getValue();
 			for (byte b : rx) {
 				handleBtByte(b);
 			}
-			intent.putExtra(EXTRA_DATA, rx);
+			intent.putExtra(EXTRA_RX, rx);
 		}
 
 		sendBroadcast(intent);
 	}
 
-	private char toHex(int b) {
+	char toHex(int b) {
+		// TODO: replace this crap with String.format()
 		switch (b) {	
 		case  0: return '0';
 		case  1: return '1';
@@ -234,7 +252,7 @@ public class RBLService extends Service {
 		return '*';
 	}
 
-	private void sendVolume() {
+	void sendVolume() {
 		int volume_index = mAudioManager
 			.getStreamVolume(mAudioManager.STREAM_MUSIC);
 
@@ -248,23 +266,23 @@ public class RBLService extends Service {
 				   String.valueOf(toHex(volume & 0xF)));
 	}
 
-	private void sendPlaying() {
+	void sendPlaying() {
 		sendString(mPlaying ? "X" : "x");
 	}
 
-	private void sendNetwork() {
+	void sendNetwork() {
 		sendString(mOnline ? "O" : "o");
 	}
 
-	private void sendArtist() {
+	void sendArtist() {
 		sendString("a" + mArtist + "\n");
 	}
 
-	private void sendTrack() {
+	void sendTrack() {
 		sendString("t" + mTrack + "\n");
 	}
 
-	private void sendState() {
+	void sendState() {
 	    Log.i(TAG, "Send state");
 		sendVolume();
 		sendPlaying();
@@ -272,7 +290,7 @@ public class RBLService extends Service {
 		sendTrack();
 	}
 
-	private void handleBtByte(byte b) {
+	void handleBtByte(byte b) {
 		char c = (char) b;
 		int volume;
 
@@ -313,7 +331,7 @@ public class RBLService extends Service {
 		};
 	}
 
-	public void sendBytes(byte[] bytes) {
+	void sendBytes(byte[] bytes) {
 		/* Byte buffer must be prepended with a null byte for some reason */
 		byte[] tx = new byte[bytes.length + 1];
 		tx[0] = 0x00;
@@ -326,45 +344,28 @@ public class RBLService extends Service {
 		writeCharacteristic(mTX);
 	}
 
-	public void sendString(String str) {
+	void sendString(String str) {
 		sendBytes(str.getBytes());
-	}
-
-	public class LocalBinder extends Binder {
-		RBLService getService() {
-			return RBLService.this;
-		}
 	}
 
 	@Override
 	public IBinder onBind(Intent intent) {
-		return mBinder;
+		return null;
 	}
-
+	
 	@Override
-	public boolean onUnbind(Intent intent) {
-		close();
-		return super.onUnbind(intent);
-	}
-
-	private final IBinder mBinder = new LocalBinder();
-
-	/**
-	 * Initializes a reference to the local Bluetooth adapter.
-	 * 
-	 * @return Return true if the initialization is successful.
-	 */
-	public boolean initialize() {
-		// For API level 18 and above, get a reference to BluetoothAdapter
-		// through
-		// BluetoothManager.
+	public void onCreate() {
+		super.onCreate();
+		
 		Log.i(TAG, "Initializing");
 
 		if (mBluetoothManager == null) {
-			mBluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+			mBluetoothManager = (BluetoothManager)
+				getSystemService(Context.BLUETOOTH_SERVICE);
 			if (mBluetoothManager == null) {
 				Log.e(TAG, "Unable to initialize BluetoothManager.");
-				return false;
+				sendBroadcast(new Intent(ACTION_UNSUPPORTED));
+				return;
 			}
 		}
 
@@ -372,11 +373,30 @@ public class RBLService extends Service {
 
 		mBluetoothAdapter = mBluetoothManager.getAdapter();
 		if (mBluetoothAdapter == null) {
-			Log.e(TAG, "Unable to obtain a BluetoothAdapter.");
-			return false;
+			Log.e(TAG, "Unable to get BluetoothAdapter.");
+			sendBroadcast(new Intent(ACTION_UNSUPPORTED));
+			return;
 		}
 
-		return true;
+		// These actions should only be handled once we're connected.
+		mConnectedFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
+		mConnectedFilter.addAction(NLService.ACTION_SONG_CHANGED);
+		mConnectedFilter.addAction(RBLService.ACTION_TX);
+		mConnectedFilter.addAction(RBLService.ACTION_DISCONNECT);
+
+		// This is the only action we can safely handle when we're
+		// disconnected.
+		mDisconnectedFilter.addAction(RBLService.ACTION_CONNECT);
+
+		// We start disconnected.
+		registerReceiver(mReceiver, mDisconnectedFilter);
+
+		sendBroadcast(new Intent(ACTION_READY));
+	}
+
+	public void onDestroy() {
+		super.onDestroy();
+		close();
 	}
 
 	/**
@@ -385,24 +405,27 @@ public class RBLService extends Service {
 	 * @param address
 	 *            The device address of the destination device.
 	 * 
-	 * @return Return true if the connection is initiated successfully. The
-	 *         connection result is reported asynchronously through the
-	 *         {@code BluetoothGattCallback#onConnectionStateChange(android.bluetooth.BluetoothGatt, int, int)}
-	 *         callback.
+	 * @return Return true if the connection is initiated successfully.
 	 */
-	public boolean connect(final String address) {
-		if (mBluetoothAdapter == null || address == null) {
-			Log.w(TAG,
-					"BluetoothAdapter not initialized or unspecified address.");
+	boolean connectToDevice(Intent intent) {
+		String address = intent.getStringExtra(EXTRA_DEVICE_ADDRESS);
+
+		if (mBluetoothAdapter == null) {
+			Log.e(TAG, "BluetoothAdapter not initialized.");
+			return false;
+		}
+
+		if (address == null) {
+			Log.e(TAG, "No address given in intent.");
 			return false;
 		}
 
 		// Previously connected device. Try to reconnect.
 		if (mBluetoothDeviceAddress != null
-				&& address.equals(mBluetoothDeviceAddress)
-				&& mBluetoothGatt != null) {
+			&& address.equals(mBluetoothDeviceAddress)
+			&& mBluetoothGatt != null) {
 			Log.d(TAG,
-					"Trying to use an existing mBluetoothGatt for connection.");
+				  "Trying to use an existing mBluetoothGatt for connection.");
 			if (mBluetoothGatt.connect()) {
 				return true;
 			} else {
@@ -410,16 +433,23 @@ public class RBLService extends Service {
 			}
 		}
 
-		final BluetoothDevice device = mBluetoothAdapter
-				.getRemoteDevice(address);
+		final BluetoothDevice device =
+			mBluetoothAdapter
+			.getRemoteDevice(address);
+		
 		if (device == null) {
-			Log.w(TAG, "Device not found.  Unable to connect.");
+			Log.e(TAG, "Device not found.  Unable to connect.");
 			return false;
 		}
-		// We want to directly connect to the device, so we are setting the
-		// autoConnect
-		// parameter to false.
+
+		// We want to directly connect to the device, so we are
+		// setting the autoConnect parameter to false.
+		
+		// TODO: this might be something we want to
+		// revisit. Autoconnect is a planned feature.
+
 		mBluetoothGatt = device.connectGatt(this, false, mGattCallback);
+
 		Log.d(TAG, "Trying to create a new connection.");
 		mBluetoothDeviceAddress = address;
 
@@ -427,12 +457,10 @@ public class RBLService extends Service {
 	}
 
 	/**
-	 * Disconnects an existing connection or cancel a pending connection. The
-	 * disconnection result is reported asynchronously through the
-	 * {@code BluetoothGattCallback#onConnectionStateChange(android.bluetooth.BluetoothGatt, int, int)}
-	 * callback.
+	 * Disconnects an existing connection or cancel a pending
+	 * connection.
 	 */
-	public void disconnect() {
+	void disconnect() {
 		if (mBluetoothAdapter == null || mBluetoothGatt == null) {
 			Log.w(TAG, "BluetoothAdapter not initialized");
 			return;
@@ -444,7 +472,7 @@ public class RBLService extends Service {
 	 * After using a given BLE device, the app must call this method to ensure
 	 * resources are released properly.
 	 */
-	public void close() {
+	void close() {
 		if (mBluetoothGatt == null) {
 			return;
 		}
@@ -461,7 +489,7 @@ public class RBLService extends Service {
 	 * @param characteristic
 	 *            The characteristic to read from.
 	 */
-	public void readCharacteristic(BluetoothGattCharacteristic characteristic) {
+	void readCharacteristic(BluetoothGattCharacteristic characteristic) {
 		if (mBluetoothAdapter == null || mBluetoothGatt == null) {
 			Log.w(TAG, "BluetoothAdapter not initialized");
 			return;
@@ -470,7 +498,7 @@ public class RBLService extends Service {
 		mBluetoothGatt.readCharacteristic(characteristic);
 	}
 
-	public void readRssi() {
+	void readRssi() {
 		if (mBluetoothAdapter == null || mBluetoothGatt == null) {
 			Log.w(TAG, "BluetoothAdapter not initialized");
 			return;
@@ -479,7 +507,7 @@ public class RBLService extends Service {
 		mBluetoothGatt.readRemoteRssi();
 	}
 
-	public void writeCharacteristic(BluetoothGattCharacteristic characteristic) {
+	void writeCharacteristic(BluetoothGattCharacteristic characteristic) {
 		if (mBluetoothAdapter == null || mBluetoothGatt == null) {
 			Log.w(TAG, "BluetoothAdapter not initialized");
 			return;
@@ -496,8 +524,8 @@ public class RBLService extends Service {
 	 * @param enabled
 	 *            If true, enable notification. False otherwise.
 	 */
-	public void setCharacteristicNotification(
-			BluetoothGattCharacteristic characteristic, boolean enabled) {
+	void setCharacteristicNotification(
+		BluetoothGattCharacteristic characteristic, boolean enabled) {
 		if (mBluetoothAdapter == null || mBluetoothGatt == null) {
 			Log.w(TAG, "BluetoothAdapter not initialized");
 			return;
@@ -521,7 +549,7 @@ public class RBLService extends Service {
 	 * 
 	 * @return A {@code List} of supported services.
 	 */
-	public BluetoothGattService getSupportedGattService() {
+	BluetoothGattService getSupportedGattService() {
 		if (mBluetoothGatt == null)
 			return null;
 
