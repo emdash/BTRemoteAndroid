@@ -67,6 +67,17 @@ public class RBLService extends Service {
 
 	final static String TAG = RBLService.class.getSimpleName();
 
+	final static String SERVICECMD = "com.spotify.mobile.android.ui.widget.";
+	final static String CMDNEXT = "NEXT";
+	final static String CMDPREV = "PREVIOUS";
+	final static String CMDTOGGLE = "PLAY";
+	final static String META_CHANGED =
+		"com.android.music.metadatachanged";
+	final static String PLAYSTATE_CHANGED =
+		"com.spotify.music.playbackstatechanged";
+	final static String QUEUE_CHANGED =
+		"com.spotify.music.queuechanged";
+
 	BluetoothManager mBluetoothManager;
 	BluetoothAdapter mBluetoothAdapter;
 	BluetoothGatt mBluetoothGatt;
@@ -193,8 +204,7 @@ public class RBLService extends Service {
 		public void onReceive(Context context, Intent intent) {
 			String action = intent.getAction();
 			Log.i(TAG, "Got intent: " + action);
-			if (action.equals(NLService.ACTION_NOTIFICATION_POSTED) ||
-				action.equals(NLService.ACTION_SONG_CHANGED)) {
+			if (action.equals(NLService.ACTION_SONG_CHANGED)) {
 				handleNotificationAction(intent);
 			} else if (action.equals(ACTION_TX)) {
 				sendString(intent.getStringExtra(EXTRA_TX));
@@ -202,6 +212,9 @@ public class RBLService extends Service {
 				connectToDevice(intent);
 			} else if (action.equals(ACTION_DISCONNECT)) {
 				connectToDevice(intent);
+			} else if (action.equals(PLAYSTATE_CHANGED)) {
+				mPlaying = intent.getBooleanExtra("playing", false);
+				sendPlaying();
 			}
 		}
 	};
@@ -305,16 +318,13 @@ public class RBLService extends Service {
 				sendNetwork();
 				break;
 			case 'x':
-				mPlaying = !mPlaying;
-				sendPlaying();
+				sendBroadcast(new Intent(SERVICECMD + CMDTOGGLE));
 				break;
 			case 'P':
-				mTrack = "Prev";
-				sendTrack();
+				sendBroadcast(new Intent(SERVICECMD + CMDPREV));
 				break;
 			case 'N':
-				mTrack = "Next";
-				sendTrack();
+				sendBroadcast(new Intent(SERVICECMD + CMDNEXT));
 				break;
 		    case 'v':
 			    /* this is wrong, but we're in prototype mode */
@@ -391,12 +401,14 @@ public class RBLService extends Service {
 		mConnectedFilter.addAction(NLService.ACTION_SONG_CHANGED);
 		mConnectedFilter.addAction(RBLService.ACTION_TX);
 		mConnectedFilter.addAction(RBLService.ACTION_DISCONNECT);
+		mConnectedFilter.addAction(PLAYSTATE_CHANGED);
 
 		// This is the only action we can safely handle when we're
 		// disconnected.
 		mDisconnectedFilter.addAction(RBLService.ACTION_CONNECT);
 		mDisconnectedFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
 		mDisconnectedFilter.addAction(NLService.ACTION_SONG_CHANGED);
+		mConnectedFilter.addAction(PLAYSTATE_CHANGED);
 
 		// We start disconnected.
 		registerReceiver(mReceiver, mDisconnectedFilter);
