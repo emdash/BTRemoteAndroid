@@ -16,6 +16,7 @@
 
 package com.redbear.chat;
 
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -347,19 +348,29 @@ public class RBLService extends Service {
 	}
 
 	void sendBytes(byte[] bytes) {
-		/* Byte buffer must be prepended with a null byte for some
-		 * reason */
-		if (mTX != null) {
-			byte[] tx = new byte[bytes.length + 1];
-			tx[0] = 0x00;
+		Log.i(TAG, "sendBytes: " + bytes.length);
+		if (mTX == null) {
+			return;
+		}
 
-			for (int i = 0; i < bytes.length; i++) {
-				tx[i + 1] = bytes[i];
-			}
+		int bytesRead = 0;
 
+		while (bytesRead < (bytes.length - 20)) {
+			Log.i(TAG, "Sending 20 bytes: " + bytesRead + ", " + (bytesRead + 20));
+			byte[] tx = Arrays.copyOfRange(bytes, bytesRead, bytesRead + 20);
+			mTX.setValue(tx);
+			writeCharacteristic(mTX);
+			bytesRead += 20;
+		}
+
+		if (bytesRead < bytes.length) {
+			Log.i(TAG, "Sending " + (bytes.length - bytesRead) + "bytes.");
+			byte[] tx = Arrays.copyOfRange(bytes, bytesRead, bytes.length);					
 			mTX.setValue(tx);
 			writeCharacteristic(mTX);
 		}
+
+		Log.i(TAG, "No more bytes.");
 	}
 
 	void sendString(String str) {
