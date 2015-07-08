@@ -60,11 +60,9 @@ public class Device extends Activity implements OnItemClickListener {
 		String addr = hashMap.get(DEVICE_ADDRESS);
 		String name = hashMap.get(DEVICE_NAME);
 
-		Intent intent = new Intent(Device.this, Chat.class);
-		intent.putExtra(EXTRA_DEVICE_ADDRESS, addr);
-		intent.putExtra(EXTRA_DEVICE_NAME, name);
-		startActivity(intent);
-		Main.instance.finish();
+		Intent intent = new Intent(RBLService.ACTION_CONNECT);
+		intent.putExtra(RBLService.EXTRA_DEVICE_ADDRESS, addr);
+		sendBroadcast(intent);
 		finish();
 	}
 }

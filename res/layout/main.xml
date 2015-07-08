@@ -12,28 +12,13 @@
         android:text="Bluetooth Remote"
         android:textSize="30sp" />
 
-    <LinearLayout
-	android:layout_width="wrap_content"
-	android:layout_height="wrap_content"
-	android:layout_centerInParent="true"
-	>
-	
-	<Button
-            android:id="@+id/connectBtn"
-            style="@style/button_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/red_button"
-            android:text="Connect" />
-
-	<Button
-            android:id="@+id/disconnectBtn"
-            style="@style/button_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/red_button"
-            android:text="Disconnect" />
-
-    </LinearLayout>
+    <Button
+        android:id="@+id/connectBtn"
+        style="@style/button_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:background="@drawable/red_button"
+        android:text="Connect" />
 
 </RelativeLayout>

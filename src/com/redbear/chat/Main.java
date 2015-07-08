@@ -11,10 +11,12 @@ import android.app.Dialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.DialogInterface.OnKeyListener;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.KeyEvent;
@@ -30,13 +32,43 @@ public class Main extends Activity {
 	private static final long SCAN_PERIOD = 3000;
 	private Dialog mDialog;
 	public static List<BluetoothDevice> mDevices = new ArrayList<BluetoothDevice>();
-	public static Main instance = null;
+	final static String TAG = Main.class.getSimpleName();
+	public static final String EXTRAS_DEVICE = "EXTRAS_DEVICE";
+
+	String mDeviceName;
+	String mDeviceAddress;
+	RBLService mService;
+
+	final BroadcastReceiver mReceiver = new BroadcastReceiver() {	
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			final String action = intent.getAction();
+
+			if (action.equals(RBLService.ACTION_READY)) {
+				/* We may want to auto-connect if there's a stored device */
+			} else if (action.equals(RBLService.ACTION_CONNECTED)) {
+				/* TODO: implement this */
+			} else if (action.equals(RBLService.ACTION_DISCONNECTED)) {
+				/* TODO: implement this */
+			}
+		}
+	};
+
+	IntentFilter mFilter = new IntentFilter();
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		requestWindowFeature(Window.FEATURE_INDETERMINATE_PROGRESS);
 		setContentView(R.layout.main);
+
+		mFilter.addAction(RBLService.ACTION_CONNECTED);
+		mFilter.addAction(RBLService.ACTION_DISCONNECTED);
+		mFilter.addAction(RBLService.ACTION_READY);
+		mFilter.addAction(NLService.ACTION_SONG_CHANGED);
+		mFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
+
+		startService(new Intent(this, RBLService.class));
 
 		if (!getPackageManager().hasSystemFeature(
 				PackageManager.FEATURE_BLUETOOTH_LE)) {
@@ -45,7 +77,9 @@ public class Main extends Activity {
 			finish();
 		}
 
-		final BluetoothManager mBluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+		BluetoothManager mBluetoothManager =
+			(BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+
 		mBluetoothAdapter = mBluetoothManager.getAdapter();
 		if (mBluetoothAdapter == null) {
 			Toast.makeText(this, "Ble not supported", Toast.LENGTH_SHORT)
@@ -82,32 +116,6 @@ public class Main extends Activity {
 				}, SCAN_PERIOD);
 			}
 		});
-
-		Button disconnect = (Button)findViewById(R.id.disconnectBtn);
-		disconnect.setOnClickListener(new OnClickListener() {
-			
-			@Override
-			public void onClick(View v) {
-				Intent intent = new Intent(RBLService.ACTION_DISCONNECT);
-				sendBroadcast(intent);
-			}
-		});
-
-		showRoundProcessDialog(Main.this, R.layout.loading_process_dialog_anim);
-
-		Timer mTimer = new Timer();
-		mTimer.schedule(new TimerTask() {
-
-			@Override
-			public void run() {
-				Intent deviceListIntent = new Intent(getApplicationContext(),
-						Device.class);
-				startActivity(deviceListIntent);
-				mDialog.dismiss();
-			}
-		}, SCAN_PERIOD);
-
-		instance = this;
 	}
 
 	public void showRoundProcessDialog(Context mContext, int layout) {
@@ -126,7 +134,7 @@ public class Main extends Activity {
 		mDialog = new AlertDialog.Builder(mContext).create();
 		mDialog.setOnKeyListener(keyListener);
 		mDialog.show();
-		// 娉ㄦ��姝ゅ��瑕���惧��show涔���� ������浼���ュ��甯�
+
 		mDialog.setContentView(layout);
 	}
 
@@ -148,7 +156,8 @@ public class Main extends Activity {
 		}.start();
 	}
 
-	private BluetoothAdapter.LeScanCallback mLeScanCallback = new BluetoothAdapter.LeScanCallback() {
+	private BluetoothAdapter.LeScanCallback
+		mLeScanCallback = new BluetoothAdapter.LeScanCallback() {
 
 		@Override
 		public void onLeScan(final BluetoothDevice device, final int rssi,
@@ -164,6 +173,18 @@ public class Main extends Activity {
 			});
 		}
 	};
+
+	@Override
+	protected void onResume() {
+		super.onResume();
+		registerReceiver(mReceiver, mFilter);
+	}
+
+	@Override
+	protected void onStop() {
+		super.onStop();
+		unregisterReceiver(mReceiver);
+	}
 
 	@Override
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {

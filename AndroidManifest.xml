@@ -30,8 +30,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name="com.redbear.chat.Chat">
-        </activity>
         <activity
             android:name=".Device"
             android:theme="@android:style/Theme.Dialog">

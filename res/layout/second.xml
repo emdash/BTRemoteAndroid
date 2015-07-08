@@ -18,27 +18,42 @@
         android:layout_weight="1"
         android:orientation="horizontal" >
 
-        <RelativeLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" >
+        <LinearLayout
+            android:layout_width="fill_parent"
+            android:layout_height="fill_parent"
+	    android:orientation="vertical"
+	    >
 
             <EditText
                 android:id="@+id/editText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_alignBottom="@+id/send"
-                android:layout_marginRight="80dp" />
+                android:layout_marginRight="80dp"
+		android:layout_weight="1"
+		/>
 
-            <Button
-                android:id="@+id/send"
-                style="@style/button_text"
-                android:layout_width="wrap_content"
+	    <LinearLayout
+		android:layout_width="fill_parent"
                 android:layout_height="wrap_content"
-                android:layout_alignParentRight="true"
-                android:layout_toLeftOf="@id/editText"
-                android:background="@drawable/red_button"
-                android:text="Send" />
-        </RelativeLayout>
+		>
+
+              <Button
+		  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:id="@+id/send"
+                  style="@style/button_text"
+                  android:background="@drawable/red_button"
+                  android:text="Send" />
+	      
+              <Button
+                  android:id="@+id/disconnectBtn"
+                  style="@style/button_text"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:background="@drawable/red_button"
+                  android:text="Disconnect" />
+	    </LinearLayout>
+        </LinearLayout>>
     </LinearLayout>
 
 </LinearLayout>
