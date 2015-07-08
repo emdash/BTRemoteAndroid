@@ -60,8 +60,8 @@ public class Main extends Activity {
 			startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
 		}
 		
-		Button btn = (Button)findViewById(R.id.btn);
-		btn.setOnClickListener(new OnClickListener() {
+		Button connect = (Button)findViewById(R.id.connectBtn);
+		connect.setOnClickListener(new OnClickListener() {
 			
 			@Override
 			public void onClick(View v) {
@@ -83,7 +83,15 @@ public class Main extends Activity {
 			}
 		});
 
-		scanLeDevice();
+		Button disconnect = (Button)findViewById(R.id.disconnectBtn);
+		disconnect.setOnClickListener(new OnClickListener() {
+			
+			@Override
+			public void onClick(View v) {
+				Intent intent = new Intent(RBLService.ACTION_DISCONNECT);
+				sendBroadcast(intent);
+			}
+		});
 
 		showRoundProcessDialog(Main.this, R.layout.loading_process_dialog_anim);
 

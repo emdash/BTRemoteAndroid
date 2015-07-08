@@ -97,12 +97,19 @@ public class RBLService extends Service {
     String mArtist = "Artist";
     String mTrack = "Track";
     String mSource = "Source";
+	double reconnectInterval = 1.0d;
 
     TimerTask mPostConnectTask = new TimerTask() {
         public void run () {
             sendState();
         }
     };
+
+	// TimerTask mReconnectTask = new TimerTask() {
+	// 	public void run () {
+	// 		connectToDevice();
+	// 	}
+	// };
 
     Timer mTimer = new Timer();
 
@@ -116,8 +123,6 @@ public class RBLService extends Service {
         public void onConnectionStateChange(BluetoothGatt gatt,
                                             int status,
                                             int newState) {
-            String intentAction;
-            
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 Log.i(TAG, "Connected to GATT server.");
                 Log.i(TAG, "Discovering services.");
@@ -125,14 +130,22 @@ public class RBLService extends Service {
                     Log.e(TAG, "Service discovery failed to start.");
                 }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                intentAction = ACTION_DISCONNECTED;
                 Log.i(TAG, "Disconnected from GATT server.");
-                broadcastUpdate(intentAction);
-                Log.i(TAG, "Updating intent filter.");
+                broadcastUpdate(ACTION_DISCONNECTED);
+
+				/* We respond to different set of intents when
+				 * disconnected from the device. */
                 unregisterReceiver(mReceiver);
                 registerReceiver(mReceiver, mDisconnectedFilter);
+
+				/* We don't want the GATT characteristics from the
+				 * last connection to hang around. */ 
                 mTX = null;
                 mRX = null;
+
+				/* We don't want the device to remain awake
+				 * indefinitely with the remote disconnected. */
+				mWakeLock.release();
             }
         }
 
