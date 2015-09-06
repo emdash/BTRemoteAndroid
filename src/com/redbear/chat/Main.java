@@ -25,6 +25,7 @@ import android.view.View.OnClickListener;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.Toast;
+import android.widget.TextView;
 
 public class Main extends Activity {
 	private BluetoothAdapter mBluetoothAdapter;
@@ -38,6 +39,7 @@ public class Main extends Activity {
 	String mDeviceName;
 	String mDeviceAddress;
 	RBLService mService;
+	TextView mTextView;
 
 	final BroadcastReceiver mReceiver = new BroadcastReceiver() {	
 		@Override
@@ -47,9 +49,11 @@ public class Main extends Activity {
 			if (action.equals(RBLService.ACTION_READY)) {
 				/* We may want to auto-connect if there's a stored device */
 			} else if (action.equals(RBLService.ACTION_CONNECTED)) {
-				/* TODO: implement this */
+				mTextView.setText("Connected");
 			} else if (action.equals(RBLService.ACTION_DISCONNECTED)) {
-				/* TODO: implement this */
+				mTextView.setText("Disconnected");
+			} else if (action.equals(RBLService.ACTION_CONNECTING)) {
+				mTextView.setText("Connecting");
 			}
 		}
 	};
@@ -93,7 +97,9 @@ public class Main extends Activity {
 					BluetoothAdapter.ACTION_REQUEST_ENABLE);
 			startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
 		}
-		
+
+		mTextView = (TextView)findViewById(R.id.tv);
+
 		Button connect = (Button)findViewById(R.id.connectBtn);
 		connect.setOnClickListener(new OnClickListener() {
 			
@@ -121,7 +127,7 @@ public class Main extends Activity {
 		disconnect.setOnClickListener(new OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				Intent intent = new Intent(RBLService.ACTION_DISCONNECT);
+				Intent intent = new Intent(RBLService.ACTION_FORGET);
 				sendBroadcast(intent);
 			}
 		});

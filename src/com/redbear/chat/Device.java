@@ -9,6 +9,7 @@ import android.app.Activity;
 import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
@@ -17,16 +18,19 @@ import android.widget.SimpleAdapter;
 
 public class Device extends Activity implements OnItemClickListener {
 
-	private ArrayList<BluetoothDevice> devices;
-	private List<Map<String, String>> listItems = new ArrayList<Map<String, String>>();
-	private SimpleAdapter adapter;
-	private Map<String, String> map = null;
-	private ListView listView;
-	private String DEVICE_NAME = "name";
-	private String DEVICE_ADDRESS = "address";
+	ArrayList<BluetoothDevice> devices;
+	List<Map<String, String>> listItems = new ArrayList<Map<String, String>>();
+	SimpleAdapter adapter;
+	Map<String, String> map = null;
+	ListView listView;
+	String DEVICE_NAME = "name";
+	String DEVICE_ADDRESS = "address";
+
 	public static final int RESULT_CODE = 31;
 	public final static String EXTRA_DEVICE_ADDRESS = "EXTRA_DEVICE_ADDRESS";
 	public final static String EXTRA_DEVICE_NAME = "EXTRA_DEVICE_NAME";
+	
+	final static String TAG = Device.class.getSimpleName();
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -55,12 +59,17 @@ public class Device extends Activity implements OnItemClickListener {
 	@Override
 	public void onItemClick(AdapterView<?> adapterView, View view,
 			int position, long id) {
+		Log.i(TAG, "onItemCLick");
+
 		HashMap<String, String> hashMap = (HashMap<String, String>) listItems
 				.get(position);
 		String addr = hashMap.get(DEVICE_ADDRESS);
 		String name = hashMap.get(DEVICE_NAME);
 
-		Intent intent = new Intent(RBLService.ACTION_CONNECT);
+		Log.i(TAG, "addr: " + addr);
+		Log.i(TAG, "name: " + name);
+
+		Intent intent = new Intent(RBLService.ACTION_CHOOSE_DEVICE);
 		intent.putExtra(RBLService.EXTRA_DEVICE_ADDRESS, addr);
 		sendBroadcast(intent);
 		finish();

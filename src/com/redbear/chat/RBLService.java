@@ -35,6 +35,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.media.AudioManager;
 import android.os.Binder;
 import android.os.IBinder;
@@ -47,10 +48,11 @@ import android.util.Log;
  * hosted on a given Bluetooth LE device.
  */
 public class RBLService extends Service {
-    public final static String ACTION_CONNECT = "ACTION_CONNECT";
+	public final static String ACTION_CHOOSE_DEVICE = "ACTION_CHOOSE_DEVICE";
     public final static String ACTION_CONNECTED = "ACTION_CONNECTED";
-    public final static String ACTION_DISCONNECT = "ACTION_DISCONNECT";
+	public final static String ACTION_CONNECTING = "ACTION_CONNECTING";
     public final static String ACTION_DISCONNECTED = "ACTION_DISCONNECTED";
+	public final static String ACTION_FORGET = "ACTION_FORGET";
     public final static String ACTION_READY = "ACTION_READY";
     public final static String ACTION_RSSI = "ACTION_RSSI";
     public final static String ACTION_RX = "ACTION_RX";
@@ -129,6 +131,7 @@ public class RBLService extends Service {
                 if (!mBluetoothGatt.discoverServices()) {
                     Log.e(TAG, "Service discovery failed to start.");
                 }
+				broadcastUpdate(ACTION_CONNECTING);
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.i(TAG, "Disconnected from GATT server.");
                 broadcastUpdate(ACTION_DISCONNECTED);
@@ -138,14 +141,16 @@ public class RBLService extends Service {
                 unregisterReceiver(mReceiver);
                 registerReceiver(mReceiver, mDisconnectedFilter);
 
-				/* We don't want the GATT characteristics from the
-				 * last connection to hang around. */ 
-                mTX = null;
-                mRX = null;
-
 				/* We don't want the device to remain awake
 				 * indefinitely with the remote disconnected. */
-				mWakeLock.release();
+				
+				//TODO: set a timer to release the wake lock after a
+				//reasonable timeout. Something like 15 minutes. If we
+				//release it too soon, we may get put to sleep even
+				//for a momentary outage. For now just don't release
+				//it, it'll get released when the user kills the app.
+				
+				//mWakeLock.release();
             }
         }
 
@@ -160,12 +165,17 @@ public class RBLService extends Service {
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
             BluetoothGattService service = getSupportedGattService();
+			Log.i(TAG, "onServicesDiscovered");
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
+				Log.i(TAG, "Success A");
                 mTX = service.getCharacteristic(UUID_BLE_SHIELD_TX);
+				Log.i(TAG, "Success B");
                 mRX = service.getCharacteristic(UUID_BLE_SHIELD_RX);
+				Log.i(TAG, "Success C");
                 setCharacteristicNotification(mRX, true);
-                mTimer.schedule(mPostConnectTask, 1000);
+				Log.i(TAG, "Success D");
+                //mTimer.schedule(mPostConnectTask, 1000);
 
                 // Update the set of actions we can handle now that
                 // we're connected.
@@ -181,9 +191,11 @@ public class RBLService extends Service {
                                           .getStreamVolume(AudioManager
                                                            .STREAM_MUSIC));
 
-                // Acquire wake lock so that we remain powered on as
-                // long as we have a bluetooth connection.
-                mWakeLock.acquire();
+                // Acquire wake lock so that we remain powered on, now
+                // that we have a bluetooth connection.
+                if (!mWakeLock.isHeld()) {
+					mWakeLock.acquire();
+				}
             } else {
                 Log.w(TAG, "onServicesDiscovered received: " + status);
             }
@@ -237,12 +249,12 @@ public class RBLService extends Service {
             Log.i(TAG, "Got intent: " + action);
             if (action.equals(NLService.ACTION_SONG_CHANGED)) {
                 handleNotificationAction(intent);
+			} else if (action.equals(ACTION_CHOOSE_DEVICE)) {
+				chooseDevice(intent);
             } else if (action.equals(ACTION_TX)) {
                 sendString(intent.getStringExtra(EXTRA_TX));
-            } else if (action.equals(ACTION_CONNECT)) {
-                connectToDevice(intent);
-            } else if (action.equals(ACTION_DISCONNECT)) {
-                disconnect();
+            } else if (action.equals(ACTION_FORGET)) {
+                forgetDevice();
             } else if (action.equals(PLAYSTATE_CHANGED)) {
                 mPlaying = intent.getBooleanExtra("playing", false);
                 sendPlaying();
@@ -433,7 +445,7 @@ public class RBLService extends Service {
 	public void onCreate() {
 		super.onCreate();
 		
-		Log.i(TAG, "Initializing");
+		Log.i(TAG, "onCreate");
 
 		if (mBluetoothManager == null) {
 			mBluetoothManager = (BluetoothManager)
@@ -454,18 +466,19 @@ public class RBLService extends Service {
 			return;
 		}
 
-		// These actions should only be handled once we're connected.
+		// We should always be ready to respond to these actions. Note
+		// how they're added to both the connected and disconnected
+		// filter.
+		mConnectedFilter.addAction(RBLService.ACTION_CHOOSE_DEVICE);
+		mConnectedFilter.addAction(RBLService.ACTION_FORGET);
+
+		mDisconnectedFilter.addAction(RBLService.ACTION_CHOOSE_DEVICE);
+		mDisconnectedFilter.addAction(RBLService.ACTION_FORGET);		
+		
+		// These actions should be handled once we're connected.
 		mConnectedFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
 		mConnectedFilter.addAction(NLService.ACTION_SONG_CHANGED);
 		mConnectedFilter.addAction(RBLService.ACTION_TX);
-		mConnectedFilter.addAction(RBLService.ACTION_DISCONNECT);
-		mConnectedFilter.addAction(PLAYSTATE_CHANGED);
-
-		// This is the only action we can safely handle when we're
-		// disconnected.
-		mDisconnectedFilter.addAction(RBLService.ACTION_CONNECT);
-		mDisconnectedFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
-		mDisconnectedFilter.addAction(NLService.ACTION_SONG_CHANGED);
 		mConnectedFilter.addAction(PLAYSTATE_CHANGED);
 
 		// We start disconnected.
@@ -477,11 +490,55 @@ public class RBLService extends Service {
 		// Initialize PM and Wake Lock
 		mPowerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
 		mWakeLock = mPowerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG);
+
+		connectToDevice();
 	}
 
 	public void onDestroy() {
 		super.onDestroy();
 		close();
+	}
+
+	/**
+	 * Saves the BLE Address into preferences, then connects to the device.
+	 * 
+	 * @param Intent
+	 *
+	 */
+	void chooseDevice(Intent i) {
+		String address = i.getStringExtra(EXTRA_DEVICE_ADDRESS);
+		SharedPreferences prefs = getSharedPreferences(
+			"default",
+			MODE_WORLD_READABLE |
+			MODE_WORLD_WRITEABLE);
+		Log.i(TAG, "chooseDevice: " + address);
+
+		// GOD DAMN IT ANDROID, WHY IS THIS SO FUCKING COMPLICATED?!
+		// IT'S JUST A FUCKING KEY-VALUE STORE. YOU SUCK!
+		SharedPreferences.Editor editor = prefs.edit();
+		editor.putString("device", address);
+		editor.commit();
+
+		connectToDevice();
+	}
+
+	/**
+	 * Disconnect from a device and clear the device preference.
+	 */
+	void forgetDevice() {
+		Log.i(TAG, "forgetDevice");
+		SharedPreferences prefs = getSharedPreferences(
+			"default",
+			MODE_WORLD_READABLE |
+			MODE_WORLD_WRITEABLE);
+
+		// GOD DAMN IT ANDROID, WHY IS THIS SO FUCKING COMPLICATED?!
+		// IT'S JUST A FUCKING KEY-VALUE STORE. YOU SUCK!
+		SharedPreferences.Editor editor = prefs.edit();
+		editor.putString("device", null);
+		editor.commit();
+
+		disconnect();
 	}
 
 	/**
@@ -492,16 +549,24 @@ public class RBLService extends Service {
 	 * 
 	 * @return Return true if the connection is initiated successfully.
 	 */
-	boolean connectToDevice(Intent intent) {
-		String address = intent.getStringExtra(EXTRA_DEVICE_ADDRESS);
+	boolean connectToDevice() {
+		Log.i(TAG, "connectToDevice");
 
-		if (mBluetoothAdapter == null) {
-			Log.e(TAG, "BluetoothAdapter not initialized.");
+		SharedPreferences prefs = getSharedPreferences(
+			"default",
+			MODE_WORLD_READABLE |
+			MODE_WORLD_WRITEABLE);
+		String address = prefs.getString("device", null);
+
+		if (address != null) {
+			Log.i(TAG, "Device: " + address);
+		} else {
+			Log.i(TAG, "No device ID saved.");
 			return false;
 		}
 
-		if (address == null) {
-			Log.e(TAG, "No address given in intent.");
+		if (mBluetoothAdapter == null) {
+			Log.e(TAG, "BluetoothAdapter not initialized.");
 			return false;
 		}
 
@@ -527,13 +592,7 @@ public class RBLService extends Service {
 			return false;
 		}
 
-		// We want to directly connect to the device, so we are
-		// setting the autoConnect parameter to false.
-		
-		// TODO: this might be something we want to
-		// revisit. Autoconnect is a planned feature.
-
-		mBluetoothGatt = device.connectGatt(this, false, mGattCallback);
+		mBluetoothGatt = device.connectGatt(this, true, mGattCallback);
 
 		Log.d(TAG, "Trying to create a new connection.");
 		mBluetoothDeviceAddress = address;
@@ -542,11 +601,11 @@ public class RBLService extends Service {
 	}
 
 	/**
-	 * Disconnects an existing connection or cancel a pending
+	 * Disconnect an existing connection or cancel a pending
 	 * connection.
 	 */
 	void disconnect() {
-		Log.i(TAG, "Got disconnect intent.");
+		Log.i(TAG, "disconnect");
 
 		if (mBluetoothAdapter == null || mBluetoothGatt == null) {
 			Log.w(TAG, "BluetoothAdapter not initialized");
