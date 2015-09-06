@@ -242,7 +242,7 @@ public class RBLService extends Service {
             } else if (action.equals(ACTION_CONNECT)) {
                 connectToDevice(intent);
             } else if (action.equals(ACTION_DISCONNECT)) {
-                connectToDevice(intent);
+                disconnect();
             } else if (action.equals(PLAYSTATE_CHANGED)) {
                 mPlaying = intent.getBooleanExtra("playing", false);
                 sendPlaying();
@@ -546,10 +546,13 @@ public class RBLService extends Service {
 	 * connection.
 	 */
 	void disconnect() {
+		Log.i(TAG, "Got disconnect intent.");
+
 		if (mBluetoothAdapter == null || mBluetoothGatt == null) {
 			Log.w(TAG, "BluetoothAdapter not initialized");
 			return;
 		}
+
 		mBluetoothGatt.disconnect();
 	}
 

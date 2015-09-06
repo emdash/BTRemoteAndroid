@@ -116,6 +116,15 @@ public class Main extends Activity {
 				}, SCAN_PERIOD);
 			}
 		});
+
+		Button disconnect = (Button)findViewById(R.id.disconnectBtn);
+		disconnect.setOnClickListener(new OnClickListener() {
+			@Override
+			public void onClick(View v) {
+				Intent intent = new Intent(RBLService.ACTION_DISCONNECT);
+				sendBroadcast(intent);
+			}
+		});
 	}
 
 	public void showRoundProcessDialog(Context mContext, int layout) {
