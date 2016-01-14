@@ -56,11 +56,9 @@ public class RBLService extends Service {
     public final static String ACTION_READY = "ACTION_READY";
     public final static String ACTION_RSSI = "ACTION_RSSI";
     public final static String ACTION_RX = "ACTION_RX";
-    public final static String ACTION_TX = "ACTION_TX";
     public final static String ACTION_UNSUPPORTED = "ACTION_UNSUPPORTED";
 
     public final static String EXTRA_RX = "EXTRA_RX";
-    public final static String EXTRA_TX = "EXTRA_TX";
     public final static String EXTRA_DEVICE_ADDRESS = "EXTRA_DEVICE_ADDRESS";
 
     public final static UUID UUID_BLE_SHIELD_TX = UUID
@@ -93,6 +91,7 @@ public class RBLService extends Service {
 
     AudioManager mAudioManager;
 
+	boolean mConnected = false;
     boolean mPlaying = false;
     boolean mOnline = true;
     byte mVolume = 127;
@@ -133,24 +132,16 @@ public class RBLService extends Service {
                 }
 				broadcastUpdate(ACTION_CONNECTING);
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+				mConnected = false;
                 Log.i(TAG, "Disconnected from GATT server.");
                 broadcastUpdate(ACTION_DISCONNECTED);
 
-				/* We respond to different set of intents when
-				 * disconnected from the device. */
-                unregisterReceiver(mReceiver);
-                registerReceiver(mReceiver, mDisconnectedFilter);
-
-				/* We don't want the device to remain awake
-				 * indefinitely with the remote disconnected. */
-				
 				//TODO: set a timer to release the wake lock after a
 				//reasonable timeout. Something like 15 minutes. If we
 				//release it too soon, we may get put to sleep even
-				//for a momentary outage. For now just don't release
-				//it, it'll get released when the user kills the app.
-				
-				//mWakeLock.release();
+				//for a momentary disconnection. For now just don't
+				//release it, it'll get released when the user kills
+				//the app.
             }
         }
 
@@ -168,20 +159,12 @@ public class RBLService extends Service {
 			Log.i(TAG, "onServicesDiscovered");
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
-				Log.i(TAG, "Success A");
+				Log.i(TAG, "Success");
                 mTX = service.getCharacteristic(UUID_BLE_SHIELD_TX);
-				Log.i(TAG, "Success B");
                 mRX = service.getCharacteristic(UUID_BLE_SHIELD_RX);
-				Log.i(TAG, "Success C");
                 setCharacteristicNotification(mRX, true);
-				Log.i(TAG, "Success D");
+				// XXX: need to figure out why this failed...
                 //mTimer.schedule(mPostConnectTask, 1000);
-
-                // Update the set of actions we can handle now that
-                // we're connected.
-                Log.i(TAG, "Unregistering receiver");
-                unregisterReceiver(mReceiver);
-                registerReceiver(mReceiver, mConnectedFilter);
 
                 // Announce to the system that we're connected now.
                 broadcastUpdate(ACTION_CONNECTED);
@@ -196,8 +179,10 @@ public class RBLService extends Service {
                 if (!mWakeLock.isHeld()) {
 					mWakeLock.acquire();
 				}
+
+				mConnected = true;
             } else {
-                Log.w(TAG, "onServicesDiscovered received: " + status);
+                Log.e(TAG, "onServicesDiscovered received: " + status);
             }
         }
 
@@ -241,7 +226,7 @@ public class RBLService extends Service {
             }
         }
     }
-    
+
     BroadcastReceiver mReceiver = new BroadcastReceiver() {        
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -251,8 +236,6 @@ public class RBLService extends Service {
                 handleNotificationAction(intent);
 			} else if (action.equals(ACTION_CHOOSE_DEVICE)) {
 				chooseDevice(intent);
-            } else if (action.equals(ACTION_TX)) {
-                sendString(intent.getStringExtra(EXTRA_TX));
             } else if (action.equals(ACTION_FORGET)) {
                 forgetDevice();
             } else if (action.equals(PLAYSTATE_CHANGED)) {
@@ -261,9 +244,6 @@ public class RBLService extends Service {
             }
         }
     };
-
-    IntentFilter mDisconnectedFilter = new IntentFilter();
-    IntentFilter mConnectedFilter = new IntentFilter();
 
     void broadcastUpdate(final String action) {
         final Intent intent = new Intent(action);
@@ -408,14 +388,16 @@ public class RBLService extends Service {
 
 	void sendBytes(byte[] bytes) {
 		Log.i(TAG, "sendBytes: " + bytes.length);
-		if (mTX == null) {
+
+		if (!mConnected) {
+			Log.i(TAG, "Not connected. Returning");
 			return;
 		}
 
 		int bytesRead = 0;
 
 		while (bytesRead < (bytes.length - 20)) {
-			Log.i(TAG, "Sending 20 bytes: " + bytesRead + ", " + (bytesRead + 20));
+			Log.d(TAG, "Sending 20 bytes: " + bytesRead + ", " + (bytesRead + 20));
 			byte[] tx = Arrays.copyOfRange(bytes, bytesRead, bytesRead + 20);
 			mTX.setValue(tx);
 			writeCharacteristic(mTX);
@@ -423,7 +405,7 @@ public class RBLService extends Service {
 		}
 
 		if (bytesRead < bytes.length) {
-			Log.i(TAG, "Sending " + (bytes.length - bytesRead) + "bytes.");
+			Log.d(TAG, "Sending " + (bytes.length - bytesRead) + "bytes.");
 			byte[] tx = Arrays.copyOfRange(bytes, bytesRead, bytes.length);					
 			mTX.setValue(tx);
 			writeCharacteristic(mTX);
@@ -466,23 +448,16 @@ public class RBLService extends Service {
 			return;
 		}
 
-		// We should always be ready to respond to these actions. Note
-		// how they're added to both the connected and disconnected
-		// filter.
-		mConnectedFilter.addAction(RBLService.ACTION_CHOOSE_DEVICE);
-		mConnectedFilter.addAction(RBLService.ACTION_FORGET);
-
-		mDisconnectedFilter.addAction(RBLService.ACTION_CHOOSE_DEVICE);
-		mDisconnectedFilter.addAction(RBLService.ACTION_FORGET);		
-		
-		// These actions should be handled once we're connected.
-		mConnectedFilter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
-		mConnectedFilter.addAction(NLService.ACTION_SONG_CHANGED);
-		mConnectedFilter.addAction(RBLService.ACTION_TX);
-		mConnectedFilter.addAction(PLAYSTATE_CHANGED);
+		// We should always be ready to respond to these actions.
+		IntentFilter filter = new IntentFilter();
+		filter.addAction(RBLService.ACTION_CHOOSE_DEVICE);
+		filter.addAction(RBLService.ACTION_FORGET);		
+		filter.addAction(NLService.ACTION_NOTIFICATION_POSTED);
+		filter.addAction(NLService.ACTION_SONG_CHANGED);
+		filter.addAction(PLAYSTATE_CHANGED);
 
 		// We start disconnected.
-		registerReceiver(mReceiver, mDisconnectedFilter);
+		registerReceiver(mReceiver, filter);
 
 		sendBroadcast(new Intent(ACTION_READY));
 		sendBroadcast(new Intent(NLService.ACTION_GET_NOTIFICATIONS));
